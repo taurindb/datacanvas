@@ -134,9 +134,9 @@ void setup()
   //init_timer1(200);  //us, get the value based on Shannon's law, sound freq: 0~3400Hz
   Serial.println(F("Done."));
  
-  Serial.println("=========== Ready to Stream ===========");
-  Serial.println("Press the button (D3) to send an update");
-  Serial.println("Type your name, followed by '!' to update name");
+  Serial.println(F("=========== Ready to Stream ==========="));
+  Serial.println(F("Press the button (D3) to send an update"));
+  Serial.println(F("Type your name, followed by '!' to update name"));
   
   
 }
