@@ -1,27 +1,23 @@
 /*****************************************************************
-
 Make sure you fill in your data stream's public, private, and data
 keys before uploading! These are in the global variable section.
-
 Hardware Hookup:
  
 Development environment specifics:
     IDE: Arduino 1.5.6-r2
     Hardware Platform: Seeeduino
-
 curl example from:
 https://github.com/sparkfun/phant/blob/master/examples/sh/curl_post.sh
-
 arduino code from:
 https://learn.sparkfun.com/tutorials/pushing-data-to-datasparkfuncom/arduino-yn
-
 Distributed as-is; no warranty is given.
 *****************************************************************/
 // Process.h gives us access to the Process class, which can be
 // used to construct Shell commands and read the response.
 #include <Process.h>
-#include <Wire.h>
+
 #include <DHT.h>
+#include <Wire.h>
 #include <Digital_Light_TSL2561.h>
 
 #define pin_uv              A2      // UV  sensor
@@ -76,12 +72,11 @@ boolean valid_dust = false;
 unsigned long push_starttime;
 unsigned long push_interval = 10000;  //ms
 
-
 /////////////////
 // Phant Stuff //
 /////////////////
 // URL to phant server (only change if you're not using data.sparkfun
-String phantURL = "https://data.sparkfun.com/input/";
+String phantURL = "http://data.sparkfun.com/input/";
 // Public key (the one you see in the URL):
 String publicKey = "roOEg1z9oDUDrJXLpdv3";
 // Private key, which only someone posting to the stream knows
@@ -93,7 +88,11 @@ String fieldName[NUM_FIELDS] = {"airquality", "dust", "humidity", "light", "soun
 // We'll use this array later to store our field data
 String fieldData[NUM_FIELDS];
 
-String name = "Oakland, California, USA, 94601";
+////////////////
+// Pin Inputs //
+////////////////
+
+String name = "Taurin";
 boolean newName = true;
 
 void setup() 
@@ -102,7 +101,7 @@ void setup()
   Serial.begin(115200);
   delay(2000); // Wait for usb serial port to initialize
 
-    /* Wire Begin */
+  /* Wire Begin */
   Wire.begin();
 
   Serial.println(F("******DataCanvasSensorNode******\r\n"));
@@ -131,68 +130,63 @@ void setup()
   air_quality_sensor_init_starttime = millis();
 
   /* other */
-  push_starttime = millis();
-  init_timer1(200);  //us, get the value based on Shannon's law, sound freq: 0~3400Hz
+  push_starttime = 0;
+  //init_timer1(200);  //us, get the value based on Shannon's law, sound freq: 0~3400Hz
   Serial.println(F("Done."));
+ 
+  Serial.println("=========== Ready to Stream ===========");
+  Serial.println("Press the button (D3) to send an update");
+  Serial.println("Type your name, followed by '!' to update name");
   
-
+  
 }
 
 void loop()
 {   
+  int snd_raw = analogRead(pin_sound);
+  if (snd_raw > snd_raw_max) snd_raw_max = snd_raw;
+  if((++cntr_snd)%5 == 0)
+  {
+    snd_sum_100ms += snd_raw_max;
+    snd_raw_max = 0;
+  }
+  
+  if (cntr_snd >= 5000)
+  {
+    cntr_snd = 0;
+    uint16_t snd_this_avg = snd_sum_100ms/1000;
+    snd_sum_100ms = 0;
+    if(snd_last_avg == 0)
+      snd_last_avg = snd_this_avg;
+    else
+      snd_last_avg = (snd_last_avg + snd_this_avg) / 2;
+    //Serial.print(snd_this_avg);
+    //Serial.print(",");
+    //Serial.println(snd_last_avg);
+  }
+  
+  if((millis() - push_starttime) > push_interval)
+  {
+    push_starttime = millis();
+    
     //{"airquality", "dust", "humidity", "light", "sound", "temperature", "uv"};
     // Gather Data
     fieldData[0] = String(analogRead(pin_air_quality));   // ~0ms
     fieldData[1] = String(iReadDensityDust());          // ~0ms, pcs/0.01cf or pcs/283ml
-    fieldData[3] = String(iReadHumidity());            // >250ms, %
-    fieldData[4] = String(iReadLux());                // >100ms , lux
-    fieldData[5] = String(iReadSoundRawVol());       // ~0ms, mV;
-    fieldData[6] = String(iReadTemperature());      // >250ms, F
-    fieldData[7] = String(iReadUVRawVol());        // > 128ms, mV
+    fieldData[2] = String(iReadHumidity());            // >250ms, %
+    fieldData[3] = String(iReadLux());                // >100ms , lux
+    fieldData[4] = String(iReadSoundRawVol());       // ~0ms, mV;
+    fieldData[5] = String(iReadTemperature());      // >250ms, F
+    fieldData[6] = String(iReadUVRawVol());        // > 128ms, mV
 
 
     // Post Data
     Serial.println("Posting Data!");
-    postData(); // the postData() function does all the work, 
-                // see below.
-     delay(10000);
-};
-
-void postData()
-{
-  Process phant; // Used to send command to Shell, and view response
-  String curlCmd; // Where we'll put our curl command
-  String curlData[NUM_FIELDS]; // temp variables to store curl data
-  
-  // Construct curl data fields
-  // Should look like: --data "fieldName=fieldData"
-  for (int i=0; i<NUM_FIELDS; i++)
-  {
-    curlData[i] = "--data \"" + fieldName[i] + "=" + fieldData[i] + "\" ";
-  }
-  
-  // Construct the curl command:
-  curlCmd = "curl ";
-  curlCmd += "--header "; // Put our private key in the header.
-  curlCmd += "\"Phant-Private-Key: "; // Tells our server the key is coming
-  curlCmd += privateKey; 
-  curlCmd += "\" "; // Enclose the entire header with quotes.
-  for (int i=0; i<NUM_FIELDS; i++)
-    curlCmd += curlData[i]; // Add our data fields to the command
-  curlCmd += phantURL + publicKey; // Add the server URL, including public key
-  
-  // Send the curl command:
-  Serial.print("Sending command: ");
-  Serial.println(curlCmd); // Print command for debug
-  phant.runShellCommand(curlCmd); // Send command through Shell
-  
-  // Read out the response:
-  Serial.print("Response: ");
-  // Use the phant process to read in any response from Linux:
-  while (phant.available())
-  {
-    char c = phant.read();
-    Serial.write(c);
+    postData(); // the postData() function does all the work,see below.
+    //delay(20000);
+    
+    cntr_snd = 0;
+    snd_raw_max = 0;
   }
 }
 
@@ -221,16 +215,18 @@ void dust_interrupt()
 }
 
 /* Timer1 Service */
-static int cntr_aq_sample = 0;
+/*static int cntr_aq_sample = 0;
 ISR(TIMER1_OVF_vect)
 {
-  int snd_raw = analogRead(pin_sound);
+  
+  int snd_raw = analogRead(pin_sound);return;
   if (snd_raw > snd_raw_max) snd_raw_max = snd_raw;
   if((++cntr_snd)%5 == 0)
   {
     snd_sum_100ms += snd_raw_max;
     snd_raw_max = 0;
   }
+  
   if (cntr_snd >= 5000)
   {
     cntr_snd = 0;
@@ -247,7 +243,7 @@ ISR(TIMER1_OVF_vect)
 }
 
 
-  void air_quality_state_machine()
+void air_quality_state_machine()
 {
   switch (air_quality_sensor_state)
   {
@@ -351,7 +347,7 @@ void init_timer1(long us)
   TCNT1 = 0;
   sei();                      //enable global interrupt
 }
-
+*/
 //*****************************************************************************
 //
 //! \brief Read temperature
@@ -457,3 +453,47 @@ float iReadUVRawVol(void) {
 int iReadSoundRawVol() {
   return snd_last_avg * (int)(4980.0f / 1023.0f);
 }
+
+void postData()
+{
+  Process phant; // Used to send command to Shell, and view response
+  String curlCmd; // Where we'll put our curl command
+  //String curlData[NUM_FIELDS]; // temp variables to store curl data
+  
+  // Construct curl data fields
+  // Should look like: --data "fieldName=fieldData"
+  /*for (int i=0; i<NUM_FIELDS; i++)
+  {
+    curlData[i] = "--data '" + fieldName[i] + "=" + fieldData[i] + "' ";
+    Serial.println(curlData[i]);
+  }*/ //we need save any little ram for the bridge system
+
+  // Construct the curl command:
+  curlCmd = F("curl ");
+  curlCmd += F("--header "); // Put our private key in the header.
+  curlCmd += F("'Phant-Private-Key: "); // Tells our server the key is coming
+  curlCmd += privateKey; 
+  curlCmd += F("' --data '"); // Enclose the entire header with quotes.
+  int i = 0;
+  for (i=0; i<(NUM_FIELDS-1); i++)
+    curlCmd += fieldName[i] + "=" + fieldData[i] + "&"; // Add our data fields to the command
+  curlCmd += fieldName[i] + "=" + fieldData[i] + "' ";
+  curlCmd += phantURL + publicKey; // Add the server URL, including public key
+  
+  // Send the curl command:
+  Serial.print(F("Sending command: "));
+  Serial.println(curlCmd); // Print command for debug
+  phant.runShellCommand(curlCmd); // Send command through Shell
+  
+  // Read out the response:
+  Serial.print(F("Response: "));
+  //Serial.println(phant.parseInt());  
+  // Use the phant process to read in any response from Linux:
+  while (phant.available() > 0)
+  {
+    char c = phant.read();
+    Serial.print(c);
+  }
+  Serial.flush();
+}
+
