@@ -7,8 +7,6 @@ Development environment specifics:
 *****************************************************************/
 // Process.h gives us access to the Process class, which can be
 // used to construct Shell commands and read the response.
-// Process.h gives us access to the Process class, which can be
-// used to construct Shell commands and read the response.
 #include <Process.h>
 
 #include <DHT.h>
@@ -67,36 +65,18 @@ boolean valid_dust = false;
 unsigned long push_starttime;
 unsigned long push_interval = 10000;  //ms
 
-/* Timestamp varibles */
-//unsigned long epoch;          // UNIX timestamp when Arduino starts
-//unsigned long millisAtEpoch;  // millis at the time of timestamp
-//unsigned long lastBroadcast;     // timestamp at last broadcast
-//unsigned long currentBroadcast;  // timestamp at current broadcast
-
 /////////////////
 // CURL Request //
 /////////////////
 const String curlStart = "curl -X POST -k -H \"Content-Type: application/json\" -d '{";
-const String curlClose = " }'  https://localdata-sensors.herokuapp.com/api/sources/ci3mv36vi0001ep0uyo5kcjbx/entries";
-
-
-
-// // URL to phant server (only change if you're not using data.sparkfun
-// String phantURL = "http://data.sparkfun.com/input/";
-// // Public key (the one you see in the URL):
-// String publicKey = "roOEg1z9oDUDrJXLpdv3";
-// // Private key, which only someone posting to the stream knows
-// String privateKey = "jk6lYeyKkoibzpXdgl9K";
-
-
+const String curlClose = " }'  https://localdata-sensors.herokuapp.com/api/sources/ci3mv36vi0001ep0uyo5kcjbx/entries"; //TODO: Change key to user variable
 
 // How many data fields are in your stream?
 const int NUM_FIELDS = 8;
 // What are the names of your fields?
-String fieldName[NUM_FIELDS] = {"timestamp","airqualitty", "dust", "humidity", "light", "sound", "temperature", "uv"};
+String fieldName[NUM_FIELDS] = {"timestamp","airquality", "dust", "humidity", "light", "sound", "temperature", "uv"};
 // We'll use this array later to store our field data
 String fieldData[NUM_FIELDS];
-
 
 void setup() 
 {
@@ -109,7 +89,6 @@ void setup()
 
   Serial.println(F("******DataCanvasSensorNode******\r\n"));
   
-  // Setup Input Pins:
    /* Initialize temperature and humidity sensor */
   Serial.println(F("Initialize sensors...\r\n"));
   dht.begin();
@@ -138,16 +117,9 @@ void setup()
   
   // Sync clock with NTP
   setClock();
- 
-  // Get time from Linino in Unix timestamp format
-  //epoch = timeInEpoch();
-  //lastBroadcast = epoch;
 
   Serial.println(F("Done."));
-
   Serial.println(F("=========== Ready to Stream ==========="));
-  
-  
 }
 
 void loop()
@@ -169,19 +141,11 @@ void loop()
       snd_last_avg = snd_this_avg;
     else
       snd_last_avg = (snd_last_avg + snd_this_avg) / 2;
-    //Serial.print(snd_this_avg);
-    //Serial.print(",");
-    //Serial.println(snd_last_avg);
   }
   
-  if((millis() - push_starttime) > push_interval)
+  if((millis() - push_starttime) > push_interval) //maybe increase posting interval to 2x per minute?
   {
     push_starttime = millis();
-    
-    //{"airquality", "dust", "humidity", "light", "sound", "temperature", "uv"};
-    // Gather Data
-     
-    char buf [50];
     
     fieldData[0] = String(timeInEpoch())+F("000");  //Timestamp needs to multiply by 1000  
     fieldData[1] = String(analogRead(pin_air_quality));   // ~0ms
@@ -192,11 +156,9 @@ void loop()
     fieldData[6] = String(iReadTemperature());      // >250ms, F
     fieldData[7] = String(iReadUVRawVol());        // > 128ms, mV
 
-
     // Post Data
     Serial.println(F("Posting Data!"));
     postData(); // the postData() function does all the work,see below.
-    //delay(20000);
     
     cntr_snd = 0;
     snd_raw_max = 0;
@@ -255,7 +217,7 @@ ISR(TIMER1_OVF_vect)
   }
 }
 
-
+//Air quality sensor is OK, dust sensor is either .62 or 0....
 void air_quality_state_machine()
 {
   switch (air_quality_sensor_state)
@@ -471,17 +433,6 @@ void postData()
 {
   Process p; // Used to send command to Shell, and view response
   String curlCmd; // Where we'll put our curl command
-  //String curlData[NUM_FIELDS]; // temp variables to store curl data
-  
-  // Construct curl data fields
-  // Should look like: --data "fieldName=fieldData"
-  /*for (int i=0; i<NUM_FIELDS; i++)
-  {
-    curlData[i] = "--data '" + fieldName[i] + "=" + fieldData[i] + "' ";
-    Serial.println(curlData[i]);
-  }*/ //we need save any little ram for the bridge system
-
-  //currentBroadcast = calcCurrentTimestamp();
 
   // Construct the curl command:
   curlCmd = (curlStart);
@@ -543,10 +494,3 @@ unsigned long timeInEpoch() {
   // Return long with timestamp
   return atol(epochCharArray);
 }
-/*
-/////////////////////////////////////////////////////////////////////
-// Return current timestamp, calculated by initial Linino's epoch + seconds past since then
-unsigned long calcCurrentTimestamp() {
-  return epoch + ((millis() - millisAtEpoch) / 1000);
-}
-*/
