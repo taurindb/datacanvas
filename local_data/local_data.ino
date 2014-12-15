@@ -68,15 +68,15 @@ unsigned long push_starttime;
 unsigned long push_interval = 10000;  //ms
 
 /* Timestamp varibles */
-unsigned long epoch;          // UNIX timestamp when Arduino starts
-unsigned long millisAtEpoch;  // millis at the time of timestamp
-unsigned long lastBroadcast;     // timestamp at last broadcast
-unsigned long currentBroadcast;  // timestamp at current broadcast
+//unsigned long epoch;          // UNIX timestamp when Arduino starts
+//unsigned long millisAtEpoch;  // millis at the time of timestamp
+//unsigned long lastBroadcast;     // timestamp at last broadcast
+//unsigned long currentBroadcast;  // timestamp at current broadcast
 
 /////////////////
 // CURL Request //
 /////////////////
-const String curlStart = "curl -X POST -H \"Content-Type: application/json\" -d '{";
+const String curlStart = "curl -X POST -k -H \"Content-Type: application/json\" -d '{";
 const String curlClose = " }'  https://localdata-sensors.herokuapp.com/api/sources/ci3mv36vi0001ep0uyo5kcjbx/entries";
 
 
@@ -140,8 +140,8 @@ void setup()
   setClock();
  
   // Get time from Linino in Unix timestamp format
-  epoch = timeInEpoch();
-  lastBroadcast = epoch;
+  //epoch = timeInEpoch();
+  //lastBroadcast = epoch;
 
   Serial.println(F("Done."));
 
@@ -183,7 +183,7 @@ void loop()
      
     char buf [50];
     
-    fieldData[0] = ltoa((100000*calcCurrentTimestamp()), buf, 10);  //Timestamp needs to multiply by 1000  
+    fieldData[0] = String(timeInEpoch())+F("000");  //Timestamp needs to multiply by 1000  
     fieldData[1] = String(analogRead(pin_air_quality));   // ~0ms
     fieldData[2] = String(iReadDensityDust());          // ~0ms, pcs/0.01cf or pcs/283ml
     fieldData[3] = String(iReadHumidity());            // >250ms, %
@@ -194,7 +194,7 @@ void loop()
 
 
     // Post Data
-    Serial.println("Posting Data!");
+    Serial.println(F("Posting Data!"));
     postData(); // the postData() function does all the work,see below.
     //delay(20000);
     
@@ -481,7 +481,7 @@ void postData()
     Serial.println(curlData[i]);
   }*/ //we need save any little ram for the bridge system
 
-  currentBroadcast = calcCurrentTimestamp();
+  //currentBroadcast = calcCurrentTimestamp();
 
   // Construct the curl command:
   curlCmd = (curlStart);
@@ -514,10 +514,10 @@ void postData()
 void setClock() {  
   Process p;
   
-  Serial.println("Setting clock.");
+  Serial.println(F("Setting clock."));
   
   // Sync clock with NTP
-  p.runShellCommand("ntpd -nqp 0.openwrt.pool.ntp.org");
+  p.runShellCommand(F("ntpd -nqp 0.openwrt.pool.ntp.org"));
   
   // Block until clock sync is completed
   while(p.running());
@@ -530,23 +530,23 @@ unsigned long timeInEpoch() {
   char epochCharArray[12] = "";   // char array to be used for atol
 
   // Get UNIX timestamp
-  time.begin("date");
-  time.addParameter("+%s");
+  time.begin(F("date"));
+  time.addParameter(F("+%s"));
   time.run();
   
   // When execution is completed, store in charArray
   while (time.available() > 0) {
-    millisAtEpoch = millis();
+    //millisAtEpoch = millis();
     time.readString().toCharArray(epochCharArray, 12);
   }
   
   // Return long with timestamp
   return atol(epochCharArray);
 }
-
+/*
 /////////////////////////////////////////////////////////////////////
 // Return current timestamp, calculated by initial Linino's epoch + seconds past since then
 unsigned long calcCurrentTimestamp() {
   return epoch + ((millis() - millisAtEpoch) / 1000);
 }
-
+*/
