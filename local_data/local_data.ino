@@ -150,7 +150,6 @@ void loop()
   if((millis() - push_starttime) > push_interval) //maybe increase posting interval to 2x per minute?
   {
     push_starttime = millis();
-    
     fieldData[0] = String(timeInEpoch())+F("000");         //Timestamp is multipied by 1000 for UNIX time 
     fieldData[1] = String(latlng);                       // [lat, lng]
     fieldData[2] = String(analogRead(pin_air_quality));  // ~0ms
@@ -164,7 +163,6 @@ void loop()
     // Post Data
     Serial.println(F("Posting Data!"));
     postData(); // the postData() function does all the work,see below.
-    
     cntr_snd = 0;
     snd_raw_max = 0;
   }
@@ -195,10 +193,9 @@ void dust_interrupt()
 }
 
 /* Timer1 Service */
-/*static int cntr_aq_sample = 0;
+static int cntr_aq_sample = 0;
 ISR(TIMER1_OVF_vect)
 {
-  
   int snd_raw = analogRead(pin_sound);return;
   if (snd_raw > snd_raw_max) snd_raw_max = snd_raw;
   if((++cntr_snd)%5 == 0)
@@ -206,7 +203,6 @@ ISR(TIMER1_OVF_vect)
     snd_sum_100ms += snd_raw_max;
     snd_raw_max = 0;
   }
-  
   if (cntr_snd >= 5000)
   {
     cntr_snd = 0;
@@ -327,16 +323,10 @@ void init_timer1(long us)
   TCNT1 = 0;
   sei();                      //enable global interrupt
 }
-*/
+
 //*****************************************************************************
-//
 //! \brief Read temperature
-//!
 //! cost time: > 250ms
-//!
-//! \param[in]
-//! \param[in]
-//!
 //! \return  temperature
 //! \refer to http://www.seeedstudio.com/wiki/File:Humidity_Temperature_Sensor_pro.zip
 //*****************************************************************************
@@ -347,16 +337,9 @@ float iReadTemperature(void) {
 }
 
 //*****************************************************************************
-//
 //! \brief Read Humidity
-//!
 //! cost time: > 250ms
-//!
-//! \param[in]
-//! \param[in]
-//!
 //! \return  Humidity
-//!
 //*****************************************************************************
 float iReadHumidity(void) {
     float humidity;
@@ -365,30 +348,17 @@ float iReadHumidity(void) {
 }
 
 //*****************************************************************************
-//
 //! \brief Read Dust Density
-//!
 //! cost time: ~0ms , unit: pcs/0.01cf or pcs/283ml
-//!
-//! \param[in]
-//! \param[in]
-//!
 //! \return  temperature
-//!
 //*****************************************************************************
 float iReadDensityDust(void) {
     return concentration;
 }
 
 //*****************************************************************************
-//
 //! \brief Read Lux value of visible light
-//!
-//! \param[in]
-//! \param[in]
-//!
 //! \return  Luminance
-//!
 //*****************************************************************************
 unsigned long iReadLux(void) {
     //cost time: > 100ms
@@ -400,14 +370,8 @@ unsigned long iReadLux(void) {
     return lux_last_valid;
 }
 //*****************************************************************************
-//
 //! \brief Read the raw voltage signal of UV sensor
-//!
-//! \param[in]
-//! \param[in]
-//!
 //! \return  voltage mV
-//!
 //*****************************************************************************
 float iReadUVRawVol(void) {
     unsigned long sum=0;
@@ -421,14 +385,8 @@ float iReadUVRawVol(void) {
 }
 
 //*****************************************************************************
-//
 //! \brief Read the raw voltage signal of sound sensor
-//!
-//! \param[in]
-//! \param[in]
-//!
 //! \return  voltage mV
-//!
 //*****************************************************************************
 int iReadSoundRawVol() {
   return snd_last_avg * (int)(4980.0f / 1023.0f);
@@ -458,7 +416,7 @@ void postData()
   // Read out the response:
   Serial.print(F("Response: "));
   //Serial.println(phant.parseInt());  
-  // Use the phant process to read in any response from Linux:
+  // Use the process to check for any response
   while (p.available() > 0)
   {
     char c = p.read();
@@ -471,12 +429,9 @@ void postData()
 // Synchronize clock using NTP
 void setClock() {  
   Process p;
-  
   Serial.println(F("Setting clock."));
-  
   // Sync clock with NTP
   p.runShellCommand(F("ntpd -nqp 0.openwrt.pool.ntp.org"));
-  
   // Block until clock sync is completed
   while(p.running());
 }
