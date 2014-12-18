@@ -1,4 +1,4 @@
- /***************************************************************** 
+/***************************************************************** 
 Upload data to localdata servers from Seeeduino 
 
 Development environment specifics:
@@ -101,7 +101,7 @@ void setup()
   /* Initialize Dust sensor */
   digitalWrite(pin_dust, HIGH);
   pinMode(pin_dust,INPUT);
-  attachInterrupt(0, dust_interrupt, CHANGE);
+  attachInterrupt(get_interrupt_num(pin_dust), dust_interrupt, CHANGE);
 
   /* Digital Light Sensor */
   TSL2561.init();
@@ -168,26 +168,40 @@ void loop()
   }
 }
 
+int get_interrupt_num(int pin)
+{
+  switch(pin)
+  {
+    case 3:{ return 0;}
+    case 2:{ return 1;}
+    case 0:{ return 2;}
+    case 1:{ return 3;}
+    case 7:{ return 4;}
+    default:{Serial.println(F("invalid pin assigned for dust sensor"));}
+    
+  }
+}
+
 /* Interrupt service */
 void dust_interrupt()
 {
+  unsigned long cur_micros = micros();
   if (digitalRead(pin_dust) == 0)  //fall
   {
-    duration_starttime = millis();
+    duration_starttime = cur_micros;
   }else
   {
-    duration = millis() - duration_starttime;
-    if (duration > 10 && duration < 200)
+    duration = cur_micros - duration_starttime;
+    if(duration > 10000 & duration < 90000) lowpulseoccupancy += duration;
+    
+    unsigned long cur_millis = millis();
+
+    if ((cur_millis - dust_starttime) > sampletime_ms)
     {
-      lowpulseoccupancy+=duration;
-    }
-    if ((millis()-dust_starttime) > sampletime_ms)
-    {
-      valid_dust = true;
       ratio = lowpulseoccupancy/(sampletime_ms*10.0);  // Integer percentage 0=>100
       concentration = 1.1*pow(ratio,3)-3.8*pow(ratio,2)+520*ratio+0.62; // using spec sheet curve
       lowpulseoccupancy = 0;
-      dust_starttime = millis();
+      dust_starttime = cur_millis;
     }
   }
 }
