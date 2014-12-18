@@ -177,8 +177,7 @@ int get_interrupt_num(int pin)
     case 0:{ return 2;}
     case 1:{ return 3;}
     case 7:{ return 4;}
-    default:{Serial.println(F("invalid pin assigned for dust sensor"));}
-    
+    default:{Serial.println(F("invalid pin assigned for dust sensor")); return 0;} 
   }
 }
 
@@ -192,7 +191,7 @@ void dust_interrupt()
   }else
   {
     duration = cur_micros - duration_starttime;
-    if(duration > 10000 & duration < 90000) lowpulseoccupancy += duration;
+    if(duration > 10000 && duration < 90000) lowpulseoccupancy += duration;
     
     unsigned long cur_millis = millis();
 
