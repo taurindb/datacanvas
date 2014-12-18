@@ -1,4 +1,4 @@
-/***************************************************************** 
+ /***************************************************************** 
 Upload data to localdata servers from Seeeduino 
 
 Development environment specifics:
@@ -69,12 +69,17 @@ unsigned long push_interval = 10000;  //ms
 // CURL Request //
 /////////////////
 const String curlStart = "curl -X POST -k -H \"Content-Type: application/json\" -d '{";
-const String curlClose = " }'  https://localdata-sensors.herokuapp.com/api/sources/ci3mv36vi0001ep0uyo5kcjbx/entries"; //TODO: Change key to user variable
+const String curlClose = " }'  https://localdata-sensors.herokuapp.com/api/sources/"; //TODO: Change key to user variable
+String latlng = "[37.7902370,-122.2300810]"; // http://mygeoposition.com/
+const String userKey = "ci3mv36vi0001ep0uyo5kcjbx";
+const String entries = "/entries";
+
+//https://localdata-sensors.herokuapp.com/api/sources/ci3mv36vi0001ep0uyo5kcjbx/entries?startIndex=0&count=1000000
 
 // How many data fields are in your stream?
-const int NUM_FIELDS = 8;
+const int NUM_FIELDS = 9;
 // What are the names of your fields?
-String fieldName[NUM_FIELDS] = {"timestamp","airquality", "dust", "humidity", "light", "sound", "temperature", "uv"};
+String fieldName[NUM_FIELDS] = {"timestamp", "location", "airquality", "dust", "humidity", "light", "sound", "temperature", "uv"};
 // We'll use this array later to store our field data
 String fieldData[NUM_FIELDS];
 
@@ -117,7 +122,6 @@ void setup()
   
   // Sync clock with NTP
   setClock();
-
   Serial.println(F("Done."));
   Serial.println(F("=========== Ready to Stream ==========="));
 }
@@ -147,14 +151,15 @@ void loop()
   {
     push_starttime = millis();
     
-    fieldData[0] = String(timeInEpoch())+F("000");  //Timestamp needs to multiply by 1000  
-    fieldData[1] = String(analogRead(pin_air_quality));   // ~0ms
-    fieldData[2] = String(iReadDensityDust());          // ~0ms, pcs/0.01cf or pcs/283ml
-    fieldData[3] = String(iReadHumidity());            // >250ms, %
-    fieldData[4] = String(iReadLux());                // >100ms , lux
-    fieldData[5] = String(iReadSoundRawVol());       // ~0ms, mV;
-    fieldData[6] = String(iReadTemperature());      // >250ms, F
-    fieldData[7] = String(iReadUVRawVol());        // > 128ms, mV
+    fieldData[0] = String(timeInEpoch())+F("000");         //Timestamp is multipied by 1000 for UNIX time 
+    fieldData[1] = String(latlng);                       // [lat, lng]
+    fieldData[2] = String(analogRead(pin_air_quality));  // ~0ms
+    fieldData[3] = String(iReadDensityDust());          // ~0ms, pcs/0.01cf or pcs/283ml
+    fieldData[4] = String(iReadHumidity());            // >250ms, %
+    fieldData[5] = String(iReadLux());                // >100ms , lux
+    fieldData[6] = String(iReadSoundRawVol());       // ~0ms, mV;
+    fieldData[7] = String(iReadTemperature());      // >250ms, F
+    fieldData[8] = String(iReadUVRawVol());        // > 128ms, mV
 
     // Post Data
     Serial.println(F("Posting Data!"));
@@ -440,8 +445,10 @@ void postData()
   for (i=0; i<(NUM_FIELDS-1); i++) {
     curlCmd += "\""+ fieldName[i] + "\": " + fieldData[i] + ", "; // Add our data fields to the command
   }
-  curlCmd += "\""+ fieldName[7] + "\": " + fieldData[7];
+  curlCmd += "\""+ fieldName[8] + "\": " + fieldData[8];
   curlCmd += curlClose; // Add the server URL, including public key
+  curlCmd += userKey;
+  curlCmd += entries;
   
   // Send the curl command:
   Serial.print(F("Sending command: "));
