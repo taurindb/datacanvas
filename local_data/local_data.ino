@@ -7,18 +7,34 @@ Development environment specifics:
 *****************************************************************/
 // Process.h gives us access to the Process class, which can be
 // used to construct Shell commands and read the response.
+#include <avr/pgmspace.h>
 #include <Process.h>
 
 #include <DHT.h>
 #include <Wire.h>
 #include <Digital_Light_TSL2561.h>
 
+/* user configuration */
+#define PRIVATE_KEY         "ci3mv36vi0001ep0uyo5kcjbx"
+#define LATLNG              "[37.7902370,-122.2300810]"    // http://mygeoposition.com/
+
+
+/**/
 #define pin_uv              A2      // UV  sensor
 #define pin_sound           A0      // Sound sensor
 #define pin_dust            7       // Dust sensor
 #define pin_air_quality     A1      // Air quality sensor
 #define pin_dht             4       // Humidity and temperature sensor
 #define DHTTYPE             DHT22   // DHT 22  (AM2302)
+
+#define FP(string_literal) (reinterpret_cast<const __FlashStringHelper *>(string_literal))
+#define FASTADC 1
+#ifndef cbi
+#define cbi(sfr, bit) (_SFR_BYTE(sfr) &= ~_BV(bit))
+#endif
+#ifndef sbi
+#define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit))
+#endif
 
 /* sample function */
 float iReadTemperature(void);
@@ -51,8 +67,9 @@ uint16_t snd_last_avg = 0;
 enum{AQ_INIT, AQ_WAIT_INIT, AQ_WORK};
 enum{AQ_HIGH_POLLUTION, AQ_POLLUTION, AQ_LOW_POLLUTION, AQ_FRESH, AQ_WARMUP};
 unsigned long air_quality_sensor_init_starttime;
-int air_quality_sensor_state = AQ_WAIT_INIT;
 unsigned long air_quality_sensor_init_time = 200000;
+unsigned long air_quality_sensor_evaluate_starttime;
+int air_quality_sensor_state = AQ_WAIT_INIT;
 int aq_first_vol, aq_last_vol, aq_std_vol, aq_std_vol_sum;
 static int cntr_aq_avg = 0;
 int aq_result = AQ_WARMUP;
@@ -61,25 +78,33 @@ int aq_result = AQ_WARMUP;
 int32_t lux_last_valid = 0;
 
 /* Global varibles */
-boolean valid_dust = false;
 unsigned long push_starttime;
 unsigned long push_interval = 10000;  //ms
 
 /////////////////
 // CURL Request //
 /////////////////
-const String curlStart = "curl -X POST -k -H \"Content-Type: application/json\" -d '{";
-const String curlClose = " }'  https://localdata-sensors.herokuapp.com/api/sources/"; //TODO: Change key to user variable
-String latlng = "[37.7902370,-122.2300810]"; // http://mygeoposition.com/
-const String userKey = "ci3mv36vi0001ep0uyo5kcjbx";
-const String entries = "/entries";
+const char curlStart[] PROGMEM = "curl -X POST -k -H \"Content-Type: application/json\" -d '{";
+const char curlClose[] PROGMEM = " }'  https://localdata-sensors.herokuapp.com/api/sources/<KEY>/entries"; 
+const char latlng[] PROGMEM = LATLNG; 
+const char userKey[] PROGMEM = PRIVATE_KEY;
 
 //https://localdata-sensors.herokuapp.com/api/sources/ci3mv36vi0001ep0uyo5kcjbx/entries?startIndex=0&count=1000000
 
 // How many data fields are in your stream?
-const int NUM_FIELDS = 9;
+const int NUM_FIELDS = 10;
 // What are the names of your fields?
-String fieldName[NUM_FIELDS] = {"timestamp", "location", "airquality", "dust", "humidity", "light", "sound", "temperature", "uv"};
+const char field0[] PROGMEM = "timestamp";
+const char field1[] PROGMEM = "location";
+const char field2[] PROGMEM = "airquality";
+const char field2_1[] PROGMEM = "airquality_raw";
+const char field3[] PROGMEM = "dust";
+const char field4[] PROGMEM = "humidity";
+const char field5[] PROGMEM = "light";
+const char field6[] PROGMEM = "sound";
+const char field7[] PROGMEM = "temperature";
+const char field8[] PROGMEM = "uv";
+const char* fieldName[NUM_FIELDS] = {field0, field1, field2, field2_1, field3, field4, field5, field6, field7, field8};
 // We'll use this array later to store our field data
 String fieldData[NUM_FIELDS];
 
@@ -116,19 +141,28 @@ void setup()
   pinMode(pin_air_quality, INPUT);
   air_quality_sensor_init_starttime = millis();
 
-  /* other */
-  push_starttime = 0;
-  //init_timer1(200);  //us, get the value based on Shannon's law, sound freq: 0~3400Hz
   
   // Sync clock with NTP
   setClock();
   Serial.println(F("Done."));
   Serial.println(F("=========== Ready to Stream ==========="));
+  
+  /* other */
+  push_starttime = 0;
+  init_timer1(200);  //us, get the value based on Shannon's law, sound freq: 0~3400Hz
+                     //need to init timer at last as the ISR of timer will interrupt the bridge system
+  #if FASTADC
+   // set prescale to 16
+   sbi(ADCSRA,ADPS2) ;
+   cbi(ADCSRA,ADPS1) ;
+   cbi(ADCSRA,ADPS0) ;
+  #endif
 }
 
 void loop()
-{   
-  int snd_raw = analogRead(pin_sound);
+{
+  //fast loops the sound sampling  
+  /*int snd_raw = analogRead(pin_sound);
   if (snd_raw > snd_raw_max) snd_raw_max = snd_raw;
   if((++cntr_snd)%5 == 0)
   {
@@ -145,23 +179,48 @@ void loop()
       snd_last_avg = snd_this_avg;
     else
       snd_last_avg = (snd_last_avg + snd_this_avg) / 2;
+  }*/
+  
+  //fast loops the state machine for air quality driver
+  if (air_quality_sensor_state != AQ_WORK) air_quality_state_machine();
+  
+  //wait to evaluate air quality sensor's outputs - interval 2s
+  if (air_quality_sensor_state == AQ_WORK && (millis() - air_quality_sensor_evaluate_starttime) > 2000)
+  {
+    air_quality_sensor_evaluation();
+    cntr_snd = 0;
+    snd_raw_max = 0;
   }
   
+  //wait to post data - slow
   if((millis() - push_starttime) > push_interval) //maybe increase posting interval to 2x per minute?
   {
     push_starttime = millis();
     fieldData[0] = String(timeInEpoch())+F("000");         //Timestamp is multipied by 1000 for UNIX time 
-    fieldData[1] = String(latlng);                       // [lat, lng]
-    fieldData[2] = String(analogRead(pin_air_quality));  // ~0ms
-    fieldData[3] = String(iReadDensityDust());          // ~0ms, pcs/0.01cf or pcs/283ml
-    fieldData[4] = String(iReadHumidity());            // >250ms, %
-    fieldData[5] = String(iReadLux());                // >100ms , lux
-    fieldData[6] = String(iReadSoundRawVol());       // ~0ms, mV;
-    fieldData[7] = String(iReadTemperature());      // >250ms, F
-    fieldData[8] = String(iReadUVRawVol());        // > 128ms, mV
+    fieldData[1] = String(FP(latlng));                     // [lat, lng]
+    switch (aq_result)
+    {
+      case AQ_WARMUP:
+        fieldData[2] = String(F("\"WarmUp\"")); break;
+      case AQ_FRESH:
+        fieldData[2] = String(F("\"Fresh\"")); break;
+      case AQ_LOW_POLLUTION:
+        fieldData[2] = String(F("\"LowPollution\"")); break;
+      case AQ_POLLUTION:
+        fieldData[2] = String(F("\"Pollution\"")); break;
+      case AQ_HIGH_POLLUTION:
+        fieldData[2] = String(F("\"HighPollution\"")); break;
+    }
+    fieldData[3] = String(analogRead(pin_air_quality));  // ~0ms
+    fieldData[4] = String(iReadDensityDust());          // ~0ms, pcs/0.01cf or pcs/283ml
+    fieldData[5] = String(iReadHumidity());            // >250ms, %
+    fieldData[6] = String(iReadLux());                // >100ms , lux
+    fieldData[7] = String(iReadSoundRawVol());       // ~0ms, mV;
+    fieldData[8] = String(iReadTemperature());      // >250ms, F
+    fieldData[9] = String(iReadUVRawVol());        // > 128ms, mV
 
     // Post Data
-    Serial.println(F("Posting Data!"));
+    Serial.println(F("\nPosting Data!"));
     postData(); // the postData() function does all the work,see below.
     cntr_snd = 0;
     snd_raw_max = 0;
@@ -206,17 +265,17 @@ void dust_interrupt()
 }
 
 /* Timer1 Service */
-static int cntr_aq_sample = 0;
 ISR(TIMER1_OVF_vect)
 {
-  int snd_raw = analogRead(pin_sound);return;
+  int snd_raw = analogRead(pin_sound);
+  snd_sum
   if (snd_raw > snd_raw_max) snd_raw_max = snd_raw;
-  if((++cntr_snd)%5 == 0)
+  if((++cntr_snd)%5 == 0)  //get the max value from 1ms
   {
     snd_sum_100ms += snd_raw_max;
     snd_raw_max = 0;
   }
-  if (cntr_snd >= 5000)
+  if (cntr_snd >= 5000)    //average per 1s
   {
     cntr_snd = 0;
     uint16_t snd_this_avg = snd_sum_100ms/1000;
@@ -231,7 +290,7 @@ ISR(TIMER1_OVF_vect)
   }
 }
 
-//Air quality sensor is OK, dust sensor is either .62 or 0....
+
 void air_quality_state_machine()
 {
   switch (air_quality_sensor_state)
@@ -311,6 +370,7 @@ void air_quality_sensor_evaluation()
   air_quality_sensor_window_avg();
 }
 
+
 #define RESOLUTION 65536    // Timer1 is 16 bit
 void init_timer1(long us)
 {
@@ -336,6 +396,7 @@ void init_timer1(long us)
   TCNT1 = 0;
   sei();                      //enable global interrupt
 }
+
 
 //*****************************************************************************
 //! \brief Read temperature
@@ -411,24 +472,22 @@ void postData()
   String curlCmd; // Where we'll put our curl command
 
   // Construct the curl command:
-  curlCmd = (curlStart);
+  curlCmd = FP(curlStart);
   int i = 0;
   for (i=0; i<(NUM_FIELDS-1); i++) {
-    curlCmd += "\""+ fieldName[i] + "\": " + fieldData[i] + ", "; // Add our data fields to the command
+    curlCmd += String("\"") + FP((PGM_P)fieldName[i]) + "\": " + fieldData[i] + ", "; // Add our data fields to the command
   }
-  curlCmd += "\""+ fieldName[8] + "\": " + fieldData[8];
-  curlCmd += curlClose; // Add the server URL, including public key
-  curlCmd += userKey;
-  curlCmd += entries;
+  curlCmd += String("\"") + FP((PGM_P)fieldName[NUM_FIELDS-1]) + "\": " + fieldData[NUM_FIELDS-1];
+  curlCmd += FP(curlClose); // Add the server URL, including public key
+  curlCmd.replace(String(F("<KEY>")), String(FP(userKey)) );
   
   // Send the curl command:
   Serial.print(F("Sending command: "));
   Serial.println(curlCmd); // Print command for debug
-  p.runShellCommandAsynchronously(curlCmd); // Send command through Shell
+  p.runShellCommand(curlCmd); // Send command through Shell
   
   // Read out the response:
   Serial.print(F("Response: "));
-  //Serial.println(phant.parseInt());  
   // Use the process to check for any response
   while (p.available() > 0)
   {
