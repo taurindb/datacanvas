@@ -28,13 +28,6 @@ Development environment specifics:
 #define DHTTYPE             DHT22   // DHT 22  (AM2302)
 
 #define FP(string_literal) (reinterpret_cast<const __FlashStringHelper *>(string_literal))
-#define FASTADC 1
-#ifndef cbi
-#define cbi(sfr, bit) (_SFR_BYTE(sfr) &= ~_BV(bit))
-#endif
-#ifndef sbi
-#define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit))
-#endif
 
 /* sample function */
 float iReadTemperature(void);
@@ -58,7 +51,7 @@ int sensorValue=0;
 DHT dht(pin_dht, DHTTYPE);
 
 /* sound sensor */
-int snd_raw_max = 0;
+uint16_t snd_raw_max = 0;
 uint32_t snd_sum_100ms = 0;
 uint16_t cntr_snd = 0;
 uint16_t snd_last_avg = 0;
@@ -108,6 +101,8 @@ const char* fieldName[NUM_FIELDS] = {field0, field1, field2, field2_1, field3, f
 // We'll use this array later to store our field data
 String fieldData[NUM_FIELDS];
 
+Process postProcess; // Used to send command to Shell, and view response
+
 void setup() 
 {
   Bridge.begin();
@@ -141,46 +136,44 @@ void setup()
   pinMode(pin_air_quality, INPUT);
   air_quality_sensor_init_starttime = millis();
 
+  /* other */
+  push_starttime = 0;
   
-  // Sync clock with NTP
+  /* check the internet connection is established */
+  checkInternet();
+  
+  /* Sync clock with NTP */
   setClock();
   Serial.println(F("Done."));
   Serial.println(F("=========== Ready to Stream ==========="));
-  
-  /* other */
-  push_starttime = 0;
-  init_timer1(200);  //us, get the value based on Shannon's law, sound freq: 0~3400Hz
-                     //need to init timer at last as the ISR of timer will interrupt the bridge system
-  #if FASTADC
-   // set prescale to 16
-   sbi(ADCSRA,ADPS2) ;
-   cbi(ADCSRA,ADPS1) ;
-   cbi(ADCSRA,ADPS0) ;
-  #endif
 }
 
 void loop()
 {
   //fast loops the sound sampling  
-  /*int snd_raw = analogRead(pin_sound);
-  if (snd_raw > snd_raw_max) snd_raw_max = snd_raw;
-  if((++cntr_snd)%5 == 0)
+  delay(100); //wait the power source to calm down after the wifi module transfered internet packets
+              //or the pulse in vcc will affect the measuring of sound sensor
+  uint32_t curtime = millis();
+  cntr_snd = 0;
+  snd_sum_100ms = 0;
+  while(millis() - curtime < 100)
   {
-    snd_sum_100ms += snd_raw_max;
-    snd_raw_max = 0;
+    int smax = 0;
+    for (int i =0;i<10;i++)  //get the max value in 10 samples
+    {
+      int s = analogRead(pin_sound);
+      if (s > smax) smax = s;
+      delayMicroseconds(10);
+    }
+    snd_sum_100ms += smax;
+    cntr_snd++;
   }
+  snd_last_avg = snd_sum_100ms / cntr_snd;
+  //Serial.print(F("sound:"));
+  //Serial.println(snd_last_avg);
+  if (snd_last_avg > snd_raw_max) snd_raw_max = snd_last_avg;
   
-  if (cntr_snd >= 5000)
-  {
-    cntr_snd = 0;
-    uint16_t snd_this_avg = snd_sum_100ms/1000;
-    snd_sum_100ms = 0;
-    if(snd_last_avg == 0)
-      snd_last_avg = snd_this_avg;
-    else
-      snd_last_avg = (snd_last_avg + snd_this_avg) / 2;
-  }*/
-  
+
   //fast loops the state machine for air quality driver
   if (air_quality_sensor_state != AQ_WORK) air_quality_state_machine();
   
@@ -225,6 +218,14 @@ void loop()
     cntr_snd = 0;
     snd_raw_max = 0;
   }
+  
+  //read response from the post process
+  while (postProcess.available() > 0)
+  {
+    char c = postProcess.read();
+    Serial.print(c);
+  }
+  Serial.flush();
 }
 
 int get_interrupt_num(int pin)
@@ -263,33 +264,6 @@ void dust_interrupt()
     }
   }
 }
-
-/* Timer1 Service */
-ISR(TIMER1_OVF_vect)
-{
-  int snd_raw = analogRead(pin_sound);
-  snd_sum
-  if (snd_raw > snd_raw_max) snd_raw_max = snd_raw;
-  if((++cntr_snd)%5 == 0)  //get the max value from 1ms
-  {
-    snd_sum_100ms += snd_raw_max;
-    snd_raw_max = 0;
-  }
-  if (cntr_snd >= 5000)    //average per 1s
-  {
-    cntr_snd = 0;
-    uint16_t snd_this_avg = snd_sum_100ms/1000;
-    snd_sum_100ms = 0;
-    if(snd_last_avg == 0)
-      snd_last_avg = snd_this_avg;
-    else
-      snd_last_avg = (snd_last_avg + snd_this_avg) / 2;
-    //Serial.print(snd_this_avg);
-    //Serial.print(",");
-    //Serial.println(snd_last_avg);
-  }
-}
-
 
 void air_quality_state_machine()
 {
@@ -370,34 +344,6 @@ void air_quality_sensor_evaluation()
   air_quality_sensor_window_avg();
 }
 
-
-#define RESOLUTION 65536    // Timer1 is 16 bit
-void init_timer1(long us)
-{
-  TCCR1A = 0;                 // clear control register A
-  TCCR1B = _BV(WGM13);        // set mode as phase and frequency correct pwm, stop the timer
-
-  long cycles;
-  long microseconds = us;   //setup microseconds here
-  unsigned char clockSelectBits;
-  cycles = (F_CPU / 2000000) * microseconds;                                // the counter runs backwards after TOP, interrupt is at BOTTOM so divide microseconds by 2
-  if (cycles < RESOLUTION)              clockSelectBits = _BV(CS10);              // no prescale, full xtal
-  else if ((cycles >>= 3) < RESOLUTION) clockSelectBits = _BV(CS11);              // prescale by /8
-  else if ((cycles >>= 3) < RESOLUTION) clockSelectBits = _BV(CS11) | _BV(CS10);  // prescale by /64
-  else if ((cycles >>= 2) < RESOLUTION) clockSelectBits = _BV(CS12);              // prescale by /256
-  else if ((cycles >>= 2) < RESOLUTION) clockSelectBits = _BV(CS12) | _BV(CS10);  // prescale by /1024
-  else        cycles = RESOLUTION - 1, clockSelectBits = _BV(CS12) | _BV(CS10);  // request was out of bounds, set as maximum
-
-  ICR1 = cycles;
-  TCCR1B &= ~(_BV(CS10) | _BV(CS11) | _BV(CS12));
-  TCCR1B |= clockSelectBits;                                          // reset clock select register, and starts the clock
-
-  TIMSK1 = _BV(TOIE1);
-  TCNT1 = 0;
-  sei();                      //enable global interrupt
-}
-
-
 //*****************************************************************************
 //! \brief Read temperature
 //! cost time: > 250ms
@@ -463,12 +409,14 @@ float iReadUVRawVol(void) {
 //! \return  voltage mV
 //*****************************************************************************
 int iReadSoundRawVol() {
-  return snd_last_avg * (int)(4980.0f / 1023.0f);
+  uint16_t snd = snd_raw_max* (int)(4980.0f / 1023.0f);
+  snd_raw_max = 0;
+  return snd;
+  //return snd_last_avg * (int)(4980.0f / 1023.0f);
 }
 
 void postData()
 {
-  Process p; // Used to send command to Shell, and view response
   String curlCmd; // Where we'll put our curl command
 
   // Construct the curl command:
@@ -484,17 +432,29 @@ void postData()
   // Send the curl command:
   Serial.print(F("Sending command: "));
   Serial.println(curlCmd); // Print command for debug
-  p.runShellCommand(curlCmd); // Send command through Shell
+  postProcess.runShellCommandAsynchronously(curlCmd); // Send command through Shell
   
   // Read out the response:
-  Serial.print(F("Response: "));
+  //Serial.print(F("Response: "));
   // Use the process to check for any response
-  while (p.available() > 0)
+  
+}
+
+/////////////////////////////////////////////////////////////////////
+// Make sure the internet connection is established
+void checkInternet()
+{
+  Process p;
+  
+  while(true)
   {
-    char c = p.read();
-    Serial.print(c);
+    p.runShellCommand(F("ping -q -w 1 -c 1 0.openwrt.pool.ntp.org > /dev/null && echo ok || echo error"));
+    if(p.find("ok")) break;
+    else
+    {
+      Serial.println(F("Internet Connection is not established"));
+    }
   }
-  Serial.flush();
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -503,9 +463,17 @@ void setClock() {
   Process p;
   Serial.println(F("Setting clock."));
   // Sync clock with NTP
-  p.runShellCommand(F("ntpd -nqp 0.openwrt.pool.ntp.org"));
-  // Block until clock sync is completed
-  while(p.running());
+  while(true)
+  {
+    uint32_t t = millis();
+    p.runShellCommandAsynchronously(F("ntpd -nqp 0.openwrt.pool.ntp.org"));
+    // Block until clock sync is completed
+    while(p.running() && millis() - t < 10000);
+    if(p.running()) { p.close();continue;}
+    else break;
+  }
+  //light up the led
+  digitalWrite(13, HIGH);
 }
 
 /////////////////////////////////////////////////////////////////////
