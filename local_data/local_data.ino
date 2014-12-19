@@ -171,7 +171,11 @@ void loop()
   snd_last_avg = snd_sum_100ms / cntr_snd;
   //Serial.print(F("sound:"));
   //Serial.println(snd_last_avg);
-  if (snd_last_avg > snd_raw_max) snd_raw_max = snd_last_avg;
+  if (snd_last_avg > snd_raw_max)
+  {
+    snd_raw_max = snd_last_avg;
+    Serial.print(F("new max sound:")); Serial.println(snd_raw_max);
+  } 
   
 
   //fast loops the state machine for air quality driver
@@ -181,8 +185,6 @@ void loop()
   if (air_quality_sensor_state == AQ_WORK && (millis() - air_quality_sensor_evaluate_starttime) > 2000)
   {
     air_quality_sensor_evaluation();
-    cntr_snd = 0;
-    snd_raw_max = 0;
   }
   
   //wait to post data - slow
@@ -215,8 +217,6 @@ void loop()
     // Post Data
     Serial.println(F("\nPosting Data!"));
     postData(); // the postData() function does all the work,see below.
-    cntr_snd = 0;
-    snd_raw_max = 0;
   }
   
   //read response from the post process
@@ -432,12 +432,7 @@ void postData()
   // Send the curl command:
   Serial.print(F("Sending command: "));
   Serial.println(curlCmd); // Print command for debug
-  postProcess.runShellCommandAsynchronously(curlCmd); // Send command through Shell
-  
-  // Read out the response:
-  //Serial.print(F("Response: "));
-  // Use the process to check for any response
-  
+  postProcess.runShellCommandAsynchronously(curlCmd); // Send command through Shell 
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -466,10 +461,16 @@ void setClock() {
   while(true)
   {
     uint32_t t = millis();
-    p.runShellCommandAsynchronously(F("ntpd -nqp 0.openwrt.pool.ntp.org"));
+    p.runShellCommandAsynchronously(F("ntpd -n -q -p 0.openwrt.pool.ntp.org"));
     // Block until clock sync is completed
     while(p.running() && millis() - t < 10000);
-    if(p.running()) { p.close();continue;}
+    if(p.running()) 
+    { 
+      Serial.println(F("fail to sync time, retry..."));
+      p.close();
+      delay(1000);
+      continue;
+    }
     else break;
   }
   //light up the led
