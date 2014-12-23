@@ -1,5 +1,6 @@
 /***************************************************************** 
-Upload data to localdata servers from Seeeduino 
+Sense Your City
+Upload data to Localdata servers from Seeeduino 
 
 Development environment specifics:
     IDE: Arduino 1.5.6-r2
@@ -14,22 +15,22 @@ Development environment specifics:
 #include <Wire.h>
 #include <Digital_Light_TSL2561.h>
 
-/* user configuration */
-#define PRIVATE_KEY         "ci3mv36vi0001ep0uyo5kcjbx"
-#define LATLNG              "[37.7902370,-122.2300810]"    // http://mygeoposition.com/
+/* User Configuration */
+#define USER_ID             "USER_ID_GOES_HERE" 
+#define PRIVATE_KEY         "PRIVATE_KEY_GOES_HERE"
+#define LNGLAT              "[37.7902370,-122.2300810]"    // Get your LONGITUDE, LARTITUDE at http://mygeoposition.com/
 
-
-/**/
-#define pin_uv              A2      // UV  sensor
+/*Define sensor locations on Grove */
+#define pin_uv              A2      // UV sensor
 #define pin_sound           A0      // Sound sensor
-#define pin_dust            7       // Dust sensor
-#define pin_air_quality     A1      // Air quality sensor
-#define pin_dht             4       // Humidity and temperature sensor
-#define DHTTYPE             DHT22   // DHT 22  (AM2302)
+#define pin_dust            7       // Dust sensor (D7)
+#define pin_air_quality     A1      // Air Quality sensor
+#define pin_dht             4       // Humidity and Temperature sensor (D4)
+#define DHTTYPE             DHT22   // DHT 22 (AM2302)
 
 #define FP(string_literal) (reinterpret_cast<const __FlashStringHelper *>(string_literal))
 
-/* sample function */
+/* Define Data Sampling Functions */
 float iReadTemperature(void);
 float iReadHumidity(void);
 float iReadDensityDust(void);
@@ -37,26 +38,26 @@ unsigned long iReadLux(void);
 float iReadUVRawVol(void);
 int iReadSoundRawVol(void);
 
-/* dust variables */
+/* Particulate Matter sensor */
 unsigned long dust_starttime;
 unsigned long duration_starttime;
 unsigned long duration;
-unsigned long sampletime_ms = 30000;
+unsigned long sampletime_ms = 30000; 
 unsigned long lowpulseoccupancy = 0;
 float ratio = 0;
 float concentration = -1;
 int sensorValue=0;
 
-/* temperature and humidity sensor */
+/* Temperature and Humidity sensor */
 DHT dht(pin_dht, DHTTYPE);
 
-/* sound sensor */
+/* Sound sensor */
 uint16_t snd_raw_max = 0;
 uint32_t snd_sum_100ms = 0;
 uint16_t cntr_snd = 0;
 uint16_t snd_last_avg = 0;
 
-/* Air Quality */
+/* Air Quality sensor */
 enum{AQ_INIT, AQ_WAIT_INIT, AQ_WORK};
 enum{AQ_HIGH_POLLUTION, AQ_POLLUTION, AQ_LOW_POLLUTION, AQ_FRESH, AQ_WARMUP};
 unsigned long air_quality_sensor_init_starttime;
@@ -74,15 +75,16 @@ int32_t lux_last_valid = 0;
 unsigned long push_starttime;
 unsigned long push_interval = 10000;  //ms
 
-/////////////////
+//////////////////
 // CURL Request //
-/////////////////
-const char curlStart[] PROGMEM = "curl -X POST -k -H \"Content-Type: application/json\" -d '{";
-const char curlClose[] PROGMEM = " }'  https://localdata-sensors.herokuapp.com/api/sources/<KEY>/entries"; 
-const char latlng[] PROGMEM = LATLNG; 
-const char userKey[] PROGMEM = PRIVATE_KEY;
+//////////////////
+const char curlStart[] PROGMEM = "curl -X POST -H \"Authorization: Bearer <KEY>\" -k -H \"Content-Type: application/json\" -d '{";
+const char curlClose[] PROGMEM = " }'  https://localdata-sensors.herokuapp.com/api/sources/ <ID>/entries"; 
+const char latlng[] PROGMEM = LNGLAT; 
+const char userId[] PROGMEM = USER_ID;
+const char privateKey[] PROGMEM = PRIVATE_KEY;
 
-//https://localdata-sensors.herokuapp.com/api/sources/ci3mv36vi0001ep0uyo5kcjbx/entries?startIndex=0&count=1000000
+// Check your data at this link -- https://localdata-sensors.herokuapp.com/api/sources/USER_ID_GOES_HERE/entries?startIndex=0&count=100000 
 
 // How many data fields are in your stream?
 const int NUM_FIELDS = 10;
@@ -100,8 +102,8 @@ const char field8[] PROGMEM = "uv";
 const char* fieldName[NUM_FIELDS] = {field0, field1, field2, field2_1, field3, field4, field5, field6, field7, field8};
 // We'll use this array later to store our field data
 String fieldData[NUM_FIELDS];
-
-Process postProcess; // Used to send command to Shell, and view response
+// Used to send command to Shell, and view response
+Process postProcess; 
 
 void setup() 
 {
@@ -139,7 +141,7 @@ void setup()
   /* other */
   push_starttime = 0;
   
-  /* check the internet connection is established */
+  /* Check that internet connection is established */
   checkInternet();
   
   /* Sync clock with NTP */
@@ -150,8 +152,8 @@ void setup()
 
 void loop()
 {
-  //fast loops the sound sampling  
-  delay(100); //wait the power source to calm down after the wifi module transfered internet packets
+  //Looping quickly to calculate peak sound levels
+  delay(100); //Wait for the power source to calm down after the wifi module transfers internet packets
               //or the pulse in vcc will affect the measuring of sound sensor
   uint32_t curtime = millis();
   cntr_snd = 0;
@@ -169,28 +171,26 @@ void loop()
     cntr_snd++;
   }
   snd_last_avg = snd_sum_100ms / cntr_snd;
-  //Serial.print(F("sound:"));
   //Serial.println(snd_last_avg);
-  if (snd_last_avg > snd_raw_max) snd_raw_max = snd_last_avg;
+  if (snd_last_avg > snd_raw_max)
+  {
+    snd_raw_max = snd_last_avg;
+    Serial.print(F("Maximum sound level:")); Serial.println(snd_raw_max);
+  } 
   
-
-  //fast loops the state machine for air quality driver
   if (air_quality_sensor_state != AQ_WORK) air_quality_state_machine();
-  
-  //wait to evaluate air quality sensor's outputs - interval 2s
+  //Wait two seconds to evaluate Air Quality sensor's outputs
   if (air_quality_sensor_state == AQ_WORK && (millis() - air_quality_sensor_evaluate_starttime) > 2000)
   {
     air_quality_sensor_evaluation();
-    cntr_snd = 0;
-    snd_raw_max = 0;
   }
   
-  //wait to post data - slow
-  if((millis() - push_starttime) > push_interval) //maybe increase posting interval to 2x per minute?
+  //Wait to post data
+  if((millis() - push_starttime) > push_interval)
   {
     push_starttime = millis();
-    fieldData[0] = String(timeInEpoch())+F("000");         //Timestamp is multipied by 1000 for UNIX time 
-    fieldData[1] = String(FP(latlng));                     // [lat, lng]
+    fieldData[0] = String(timeInEpoch())+F("000");  //Timestamp is multipied by 1000 for UNIX time 
+    fieldData[1] = String(FP(latlng));              
     switch (aq_result)
     {
       case AQ_WARMUP:
@@ -215,8 +215,6 @@ void loop()
     // Post Data
     Serial.println(F("\nPosting Data!"));
     postData(); // the postData() function does all the work,see below.
-    cntr_snd = 0;
-    snd_raw_max = 0;
   }
   
   //read response from the post process
@@ -284,7 +282,6 @@ void air_quality_state_machine()
         {
           //Serial.print("init:");
           //Serial.println(v);
-
           aq_first_vol = v;
           aq_last_vol = v;
           aq_std_vol = v;
@@ -324,10 +321,8 @@ void air_quality_sensor_evaluation()
 {
   aq_last_vol = aq_first_vol;
   aq_first_vol = analogRead(pin_air_quality);
-
   //Serial.println(aq_std_vol);
   //Serial.println(aq_first_vol);
-
   if (aq_first_vol - aq_last_vol > 200 || aq_first_vol > 350)
   {
     aq_result = AQ_HIGH_POLLUTION;
@@ -345,21 +340,20 @@ void air_quality_sensor_evaluation()
 }
 
 //*****************************************************************************
-//! \brief Read temperature
-//! cost time: > 250ms
-//! \return  temperature
-//! \refer to http://www.seeedstudio.com/wiki/File:Humidity_Temperature_Sensor_pro.zip
+//! \brief Read Temperature
+//! \Sampling Period time: > 250ms
+//! \return  Temperature
+//! \refer to http://www.seeedstudio.com/wiki/Grove_-_Temperature_and_Humidity_Sensor_Pro
 //*****************************************************************************
 float iReadTemperature(void) {
     float temper;
-    temper = dht.readTemperature(true); //true: get F, false: get oC
+    temper = dht.readTemperature(false); //true: get F, false: get oC
     return temper;
 }
 
 //*****************************************************************************
 //! \brief Read Humidity
-//! cost time: > 250ms
-//! \return  Humidity
+//! \return Humidity (%)
 //*****************************************************************************
 float iReadHumidity(void) {
     float humidity;
@@ -369,8 +363,7 @@ float iReadHumidity(void) {
 
 //*****************************************************************************
 //! \brief Read Dust Density
-//! cost time: ~0ms , unit: pcs/0.01cf or pcs/283ml
-//! \return  temperature
+//! \return Temperature (pcs/0.01cf or pcs/283ml)
 //*****************************************************************************
 float iReadDensityDust(void) {
     return concentration;
@@ -378,7 +371,8 @@ float iReadDensityDust(void) {
 
 //*****************************************************************************
 //! \brief Read Lux value of visible light
-//! \return  Luminance
+//! \return Luminance
+//! \refer http://www.seeedstudio.com/wiki/Grove_-_Digital_Light_Sensor
 //*****************************************************************************
 unsigned long iReadLux(void) {
     //cost time: > 100ms
@@ -389,9 +383,10 @@ unsigned long iReadLux(void) {
     }
     return lux_last_valid;
 }
+
 //*****************************************************************************
-//! \brief Read the raw voltage signal of UV sensor
-//! \return  voltage mV
+//! \brief Read the raw voltage signal of the UV sensor
+//! \return Voltage (mV)
 //*****************************************************************************
 float iReadUVRawVol(void) {
     unsigned long sum=0;
@@ -405,8 +400,8 @@ float iReadUVRawVol(void) {
 }
 
 //*****************************************************************************
-//! \brief Read the raw voltage signal of sound sensor
-//! \return  voltage mV
+//! \brief Read the raw voltage signal of the Sound sensor
+//! \return  Voltage (mV)
 //*****************************************************************************
 int iReadSoundRawVol() {
   uint16_t snd = snd_raw_max* (int)(4980.0f / 1023.0f);
@@ -415,10 +410,13 @@ int iReadSoundRawVol() {
   //return snd_last_avg * (int)(4980.0f / 1023.0f);
 }
 
+//*****************************************************************************
+//! \brief Post data to localdata via CURL
+//! \return  CURL request to post data to localdata servers
+//*****************************************************************************
 void postData()
 {
   String curlCmd; // Where we'll put our curl command
-
   // Construct the curl command:
   curlCmd = FP(curlStart);
   int i = 0;
@@ -427,25 +425,20 @@ void postData()
   }
   curlCmd += String("\"") + FP((PGM_P)fieldName[NUM_FIELDS-1]) + "\": " + fieldData[NUM_FIELDS-1];
   curlCmd += FP(curlClose); // Add the server URL, including public key
-  curlCmd.replace(String(F("<KEY>")), String(FP(userKey)) );
-  
+  curlCmd.replace(String(F("<ID>")), String(FP(userId)) );
+  curlCmd.replace(String(F("<KEY>")), String(FP(privateKey)) );
   // Send the curl command:
   Serial.print(F("Sending command: "));
   Serial.println(curlCmd); // Print command for debug
-  postProcess.runShellCommandAsynchronously(curlCmd); // Send command through Shell
-  
-  // Read out the response:
-  //Serial.print(F("Response: "));
-  // Use the process to check for any response
-  
+  postProcess.runShellCommandAsynchronously(curlCmd); // Send command through Shell 
 }
 
-/////////////////////////////////////////////////////////////////////
-// Make sure the internet connection is established
+//*****************************************************************************
+//! \brief Make sure the internet connection is established
+//*****************************************************************************
 void checkInternet()
 {
   Process p;
-  
   while(true)
   {
     p.runShellCommand(F("ping -q -w 1 -c 1 0.openwrt.pool.ntp.org > /dev/null && echo ok || echo error"));
@@ -457,42 +450,47 @@ void checkInternet()
   }
 }
 
-/////////////////////////////////////////////////////////////////////
-// Synchronize clock using NTP
+//*****************************************************************************
+//! \brief Synchronize clock using NTP
+//*****************************************************************************
 void setClock() {  
   Process p;
-  Serial.println(F("Setting clock."));
+  Serial.println(F("Setting Clock..."));
   // Sync clock with NTP
   while(true)
   {
     uint32_t t = millis();
-    p.runShellCommandAsynchronously(F("ntpd -nqp 0.openwrt.pool.ntp.org"));
+    p.runShellCommandAsynchronously(F("ntpd -n -q -p 0.openwrt.pool.ntp.org"));
     // Block until clock sync is completed
     while(p.running() && millis() - t < 10000);
-    if(p.running()) { p.close();continue;}
+    if(p.running()) 
+    { 
+      Serial.println(F("Failed to sync time, retrying..."));
+      p.close();
+      delay(1000);
+      continue;
+    }
     else break;
   }
-  //light up the led
+  //Light up the LED when time is set. 
   digitalWrite(13, HIGH);
 }
 
-/////////////////////////////////////////////////////////////////////
-// Return timestamp of Linino
+//*****************************************************************************
+//! \brief Calculate time in UNIX time.
+//! \return  Timestamp in UNIX time
+//*****************************************************************************
 unsigned long timeInEpoch() {
-  Process time;                   // process to run on Linuino
-  char epochCharArray[12] = "";   // char array to be used for atol
-
+  Process time;                   
+  char epochCharArray[12] = "";   
   // Get UNIX timestamp
   time.begin(F("date"));
   time.addParameter(F("+%s"));
   time.run();
-  
   // When execution is completed, store in charArray
   while (time.available() > 0) {
-    //millisAtEpoch = millis();
     time.readString().toCharArray(epochCharArray, 12);
   }
-  
-  // Return long with timestamp
+  // Return timestamp as a long value 
   return atol(epochCharArray);
 }
