@@ -175,7 +175,11 @@ void loop()
   if (snd_last_avg > snd_raw_max)
   {
     snd_raw_max = snd_last_avg;
+<<<<<<< HEAD
     Serial.print(F("Maximum sound level:")); Serial.println(snd_raw_max);
+=======
+    Serial.print(F("new max sound:")); Serial.println(snd_raw_max);
+>>>>>>> FETCH_HEAD
   } 
   
   if (air_quality_sensor_state != AQ_WORK) air_quality_state_machine();
@@ -465,7 +469,11 @@ void setClock() {
     while(p.running() && millis() - t < 10000);
     if(p.running()) 
     { 
+<<<<<<< HEAD
       Serial.println(F("Failed to sync time, retrying..."));
+=======
+      Serial.println(F("fail to sync time, retry..."));
+>>>>>>> FETCH_HEAD
       p.close();
       delay(1000);
       continue;
