@@ -79,7 +79,7 @@ unsigned long push_interval = 10000;  //ms
 // CURL Request //
 //////////////////
 const char curlStart[] PROGMEM = "curl -X POST -H \"Authorization: Bearer <KEY>\" -k -H \"Content-Type: application/json\" -d '{";
-const char curlClose[] PROGMEM = " }'  https://localdata-sensors.herokuapp.com/api/sources/ <ID>/entries"; 
+const char curlClose[] PROGMEM = " }'  https://localdata-sensors.herokuapp.com/api/sources/<ID>/entries"; 
 const char latlng[] PROGMEM = LNGLAT; 
 const char userId[] PROGMEM = USER_ID;
 const char privateKey[] PROGMEM = PRIVATE_KEY;
