@@ -1,16 +1,35 @@
 /***************************************************************** 
-Sense Your City
-Upload data to Localdata servers from Seeeduino 
+ * Sense Your City
+ * Upload data to Localdata servers from Seeeduino Cloud
+ * 
+ * Development environment specifics:
+ *     IDE: Arduino >= 1.5.6-r2
+ *     Hardware Platform: Seeeduino Cloud
+ * 
+ * This software is licensed under The MIT License (MIT)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ *****************************************************************/
 
-Development environment specifics:
-    IDE: Arduino 1.5.6-r2
-    Hardware Platform: Seeeduino
-*****************************************************************/
-// Process.h gives us access to the Process class, which can be
-// used to construct Shell commands and read the response.
 #include <avr/pgmspace.h>
-#include <Process.h>
-
+#include <Process.h>        // Process.h gives us access to the Process class, which can be
+                            // used to construct Shell commands and read the response.
 #include <DHT.h>
 #include <Wire.h>
 #include <Digital_Light_TSL2561.h>
@@ -105,6 +124,12 @@ String fieldData[NUM_FIELDS];
 // Used to send command to Shell, and view response
 Process postProcess; 
 
+
+//*****************************************************************************
+//! \brief arduino setup
+//! \arduino setup
+//! \return  void
+//*****************************************************************************
 void setup() 
 {
   Bridge.begin();
@@ -116,7 +141,7 @@ void setup()
 
   Serial.println(F("******DataCanvasSensorNode******\r\n"));
   
-   /* Initialize temperature and humidity sensor */
+  /* Initialize temperature and humidity sensor */
   Serial.println(F("Initialize sensors...\r\n"));
   dht.begin();
 
@@ -150,6 +175,12 @@ void setup()
   Serial.println(F("=========== Ready to Stream ==========="));
 }
 
+
+//*****************************************************************************
+//! \brief arduino loop
+//! \arduino loop
+//! \return  void
+//*****************************************************************************
 void loop()
 {
   //Looping quickly to calculate peak sound levels
@@ -226,6 +257,12 @@ void loop()
   Serial.flush();
 }
 
+
+//*****************************************************************************
+//! \brief get interrupt number
+//! \get the related interrupt number of specific pin of Leonardo
+//! \return  int the interrupt number that can be used with attachInterrupt()
+//*****************************************************************************
 int get_interrupt_num(int pin)
 {
   switch(pin)
@@ -239,7 +276,11 @@ int get_interrupt_num(int pin)
   }
 }
 
-/* Interrupt service */
+//*****************************************************************************
+//! \brief ISR
+//! \Interrupt service for dust sensor
+//! \return  void
+//*****************************************************************************
 void dust_interrupt()
 {
   unsigned long cur_micros = micros();
@@ -263,6 +304,12 @@ void dust_interrupt()
   }
 }
 
+
+//*****************************************************************************
+//! \brief state machine for reading air quality sensor
+//! \the air quality sensor needs at least 3min to heat up
+//! \return  void
+//*****************************************************************************
 void air_quality_state_machine()
 {
   switch (air_quality_sensor_state)
@@ -304,6 +351,12 @@ void air_quality_state_machine()
   }
 }
 
+
+//*****************************************************************************
+//! \brief window average calculation for air quality sensor's readings
+//! \with the window length of 5 minutes
+//! \return  void
+//*****************************************************************************
 void air_quality_sensor_window_avg()
 {
   if (++cntr_aq_avg >= 150)  //sum for 5 minutes
@@ -317,6 +370,12 @@ void air_quality_sensor_window_avg()
   }
 }
 
+
+//*****************************************************************************
+//! \brief evaluate the qir quality
+//! \evaluate the qir quality
+//! \return  void
+//*****************************************************************************
 void air_quality_sensor_evaluation()
 {
   aq_last_vol = aq_first_vol;
