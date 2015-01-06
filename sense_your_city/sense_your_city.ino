@@ -35,9 +35,11 @@
 #include <Digital_Light_TSL2561.h>
 
 /* User Configuration */
-#define USER_ID             "USER_ID_GOES_HERE" 
-#define PRIVATE_KEY         "PRIVATE_KEY_GOES_HERE"
-#define LNGLAT              "[37.7902370,-122.2300810]"    // Get your LONGITUDE, LARTITUDE at http://mygeoposition.com/
+#define USER_ID             "USER_ID_GOES_HERE"            //"Key"
+#define PRIVATE_KEY         "PRIVATE_KEY_GOES_HERE"        //"Encoded bearer token"
+#define LNGLAT              "[37.7902370,-122.2300810]"    // Get your LONGITUDE, LATITUDE at http://mygeoposition.com/
+
+// Check your data at this link -- https://localdata-sensors.herokuapp.com/api/sources/USER_ID_GOES_HERE/entries?startIndex=0&count=100000 
 
 /*Define sensor locations on Grove */
 #define pin_uv              A2      // UV sensor
@@ -102,8 +104,6 @@ const char curlClose[] PROGMEM = " }'  https://localdata-sensors.herokuapp.com/a
 const char latlng[] PROGMEM = LNGLAT; 
 const char userId[] PROGMEM = USER_ID;
 const char privateKey[] PROGMEM = PRIVATE_KEY;
-
-// Check your data at this link -- https://localdata-sensors.herokuapp.com/api/sources/USER_ID_GOES_HERE/entries?startIndex=0&count=100000 
 
 // How many data fields are in your stream?
 const int NUM_FIELDS = 10;
